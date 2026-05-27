@@ -21,7 +21,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.mount("/static", StaticFiles(directory="static"), name="static")
+# app.mount("/static", StaticFiles(directory="static"), name="static")
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
 DEFAULT_MODEL = "llama3-8b-8192"
 ALLOWED_MODELS = {
@@ -34,7 +34,7 @@ ALLOWED_MODELS = {
 
 @app.get("/", response_class=HTMLResponse)
 async def home():
-    with open("static/index.html", encoding="utf-8") as f:
+    with open("index.html", encoding="utf-8") as f:
         return f.read()
 
 
