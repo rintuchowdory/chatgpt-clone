@@ -1,36 +1,96 @@
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-import httpx, os, json
+import httpx
+import os
+import json
+from dotenv import load_dotenv
 
-app = FastAPI()
+load_dotenv()
+
+app = FastAPI(title="ChatGPT Clone")
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
-MODEL = "llama3-8b-8192"
+DEFAULT_MODEL = "llama3-8b-8192"
+ALLOWED_MODELS = {
+    "llama3-8b-8192",
+    "llama3-70b-8192",
+    "mixtral-8x7b-32768",
+    "gemma2-9b-it",
+}
+
 
 @app.get("/", response_class=HTMLResponse)
 async def home():
-    with open("static/index.html") as f:
+    with open("static/index.html", encoding="utf-8") as f:
         return f.read()
+
+
+@app.get("/health")
+async def health():
+    has_key = bool(os.getenv("GROQ_API_KEY", ""))
+    return JSONResponse({"ok": True, "provider": "groq", "api_key_configured": has_key})
+
+
+def sanitize_messages(raw_messages):
+    if not isinstance(raw_messages, list):
+        return []
+
+    cleaned = []
+    for item in raw_messages:
+        if not isinstance(item, dict):
+            continue
+        role = item.get("role")
+        content = item.get("content")
+        if role not in {"system", "user", "assistant"}:
+            continue
+        if not isinstance(content, str):
+            continue
+        content = content.strip()
+        if not content:
+            continue
+        cleaned.append({"role": role, "content": content})
+
+    return cleaned[-40:]
+
 
 @app.post("/chat")
 async def chat(request: Request):
     body = await request.json()
-    messages = body.get("messages", [])
+    messages = sanitize_messages(body.get("messages", []))
+    model = body.get("model", DEFAULT_MODEL)
+
+    if model not in ALLOWED_MODELS:
+        model = DEFAULT_MODEL
 
     async def stream():
+        api_key = os.getenv("GROQ_API_KEY", "")
+        if not api_key:
+            yield "[Server error] GROQ_API_KEY is missing. Add it to your environment."
+            return
+
         async with httpx.AsyncClient(timeout=60) as client:
-            async with client.stream("POST", GROQ_URL, headers={
-                "Authorization": f"Bearer {GROQ_API_KEY}",
-                "Content-Type": "application/json"
-            }, json={
-                "model": MODEL,
-                "messages": messages,
-                "stream": True,
-                "max_tokens": 1024
-            }) as resp:
+            async with client.stream(
+                "POST",
+                GROQ_URL,
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": model,
+                    "messages": messages,
+                    "stream": True,
+                    "max_tokens": 1200,
+                    "temperature": 0.6,
+                },
+            ) as resp:
+                if resp.status_code >= 400:
+                    details = await resp.aread()
+                    yield f"[Provider error {resp.status_code}] {details.decode(errors='ignore')}"
+                    return
+
                 async for line in resp.aiter_lines():
                     if line.startswith("data: "):
                         data = line[6:]

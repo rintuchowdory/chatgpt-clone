@@ -5,71 +5,194 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>ChatGPT Clone</title>
 <style>
+  :root {
+    --bg: #0f1115;
+    --panel: #171a21;
+    --panel-2: #1e232d;
+    --line: #2a2f3a;
+    --text: #e7e9ee;
+    --text-muted: #98a2b3;
+    --brand: #10a37f;
+    --brand-2: #0d8f6f;
+  }
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: system-ui, sans-serif; background: #212121; color: #ececec; display: flex; flex-direction: column; height: 100vh; }
-  #header { padding: 16px 24px; border-bottom: 1px solid #333; font-size: 18px; font-weight: 600; color: #fff; }
-  #messages { flex: 1; overflow-y: auto; padding: 24px; display: flex; flex-direction: column; gap: 16px; }
-  .msg { max-width: 75%; padding: 12px 16px; border-radius: 12px; line-height: 1.6; white-space: pre-wrap; word-break: break-word; }
-  .user { background: #2f2f2f; align-self: flex-end; border-bottom-right-radius: 4px; }
-  .bot  { background: #1a1a2e; align-self: flex-start; border-bottom-left-radius: 4px; border: 1px solid #333; }
-  .bot .label { font-size: 11px; color: #888; margin-bottom: 4px; }
-  #input-area { padding: 16px 24px; border-top: 1px solid #333; display: flex; gap: 10px; }
-  #input { flex: 1; background: #2f2f2f; border: 1px solid #444; border-radius: 8px; padding: 12px 16px; color: #fff; font-size: 15px; resize: none; height: 50px; outline: none; }
-  #input:focus { border-color: #666; }
-  #send { background: #10a37f; color: white; border: none; border-radius: 8px; padding: 0 20px; font-size: 15px; cursor: pointer; height: 50px; }
-  #send:disabled { background: #444; cursor: not-allowed; }
-  .typing { color: #888; font-style: italic; }
+  body { font-family: Inter, system-ui, sans-serif; background: var(--bg); color: var(--text); height: 100vh; }
+  .app { display: grid; grid-template-columns: 280px 1fr; height: 100vh; }
+  .sidebar { background: #0c0e13; border-right: 1px solid var(--line); padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+  .btn { border: 1px solid var(--line); background: #1b1f28; color: var(--text); border-radius: 10px; padding: 10px 12px; cursor: pointer; }
+  .btn:hover { background: #242a35; }
+  .chat-list { display: flex; flex-direction: column; gap: 8px; overflow: auto; }
+  .chat-item { border: 1px solid transparent; padding: 10px; border-radius: 8px; color: var(--text-muted); cursor: pointer; display:flex; justify-content:space-between; gap:8px; }
+  .chat-item.active, .chat-item:hover { border-color: var(--line); background: #171b24; color: var(--text); }
+  .chat-item button { background: transparent; border: none; color: #7d8697; cursor:pointer; }
+  .main { display: flex; flex-direction: column; }
+  .topbar { height: 60px; border-bottom: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; padding: 0 20px; background: var(--panel); }
+  .title { font-size: 16px; font-weight: 600; }
+  select { background: #202533; border: 1px solid #3b4352; color: var(--text); border-radius: 8px; padding: 8px 10px; }
+  #messages { flex: 1; overflow: auto; padding: 24px; display: flex; flex-direction: column; gap: 18px; background: var(--bg); }
+  .msg { max-width: 900px; width: 100%; margin: 0 auto; border-radius: 14px; line-height: 1.65; white-space: pre-wrap; word-break: break-word; padding: 14px 16px; }
+  .user { background: #242a35; }
+  .assistant { background: #171d29; border: 1px solid #313a4b; }
+  .label { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--text-muted); margin-bottom: 6px; }
+  .typing { color: var(--text-muted); font-style: italic; }
+  .composer-wrap { border-top: 1px solid var(--line); padding: 16px; background: var(--panel); }
+  .composer { max-width: 920px; margin: 0 auto; display: flex; gap: 10px; }
+  textarea { flex: 1; min-height: 56px; max-height: 200px; resize: vertical; border-radius: 12px; border: 1px solid #374055; background: var(--panel-2); color: var(--text); padding: 12px 14px; font-size: 15px; }
+  .send { background: var(--brand); color: #fff; border: none; border-radius: 12px; padding: 0 20px; font-weight: 600; cursor: pointer; }
+  .send:hover { background: var(--brand-2); }
+  .send:disabled { opacity: .5; cursor: not-allowed; }
+  .hint { font-size: 12px; color: var(--text-muted); margin-top: 8px; max-width: 920px; margin-left: auto; margin-right: auto; }
+  @media (max-width: 900px) { .app { grid-template-columns: 1fr; } .sidebar { display: none; } }
 </style>
 </head>
 <body>
-<div id="header">🤖 ChatGPT Clone — Powered by Groq</div>
-<div id="messages"></div>
-<div id="input-area">
-  <textarea id="input" placeholder="Send a message..." rows="1"></textarea>
-  <button id="send">Send</button>
+<div class="app">
+  <aside class="sidebar">
+    <button class="btn" id="newChat">+ New chat</button>
+    <div class="chat-list" id="chatList"></div>
+  </aside>
+
+  <main class="main">
+    <div class="topbar">
+      <div class="title">ChatGPT Clone Pro</div>
+      <select id="model">
+        <option value="llama3-8b-8192">llama3-8b-8192</option>
+        <option value="llama3-70b-8192">llama3-70b-8192</option>
+        <option value="mixtral-8x7b-32768">mixtral-8x7b-32768</option>
+        <option value="gemma2-9b-it">gemma2-9b-it</option>
+      </select>
+    </div>
+
+    <section id="messages"></section>
+
+    <div class="composer-wrap">
+      <div class="composer">
+        <textarea id="input" placeholder="Message your assistant..."></textarea>
+        <button class="send" id="send">Send</button>
+      </div>
+      <div class="hint">Shift+Enter for new line · Enter to send</div>
+    </div>
+  </main>
 </div>
+
 <script>
   const messagesEl = document.getElementById("messages");
   const inputEl = document.getElementById("input");
   const sendBtn = document.getElementById("send");
-  let history = [];
+  const newChatBtn = document.getElementById("newChat");
+  const chatListEl = document.getElementById("chatList");
+  const modelEl = document.getElementById("model");
 
-  function addMessage(role, text) {
-    const div = document.createElement("div");
-    div.className = "msg " + (role === "user" ? "user" : "bot");
-    if (role === "assistant") {
-      const label = document.createElement("div");
-      label.className = "label";
-      label.textContent = "Assistant";
-      div.appendChild(label);
+  let chats = [{ id: Date.now(), title: "New chat", messages: [] }];
+  let activeChatId = chats[0].id;
+
+  function getActiveChat() { return chats.find(c => c.id === activeChatId); }
+  function persist() {
+    localStorage.setItem("chatgpt_clone_chats", JSON.stringify(chats));
+    localStorage.setItem("chatgpt_clone_active", String(activeChatId));
+  }
+  function restore() {
+    const stored = localStorage.getItem("chatgpt_clone_chats");
+    const active = localStorage.getItem("chatgpt_clone_active");
+    if (stored) {
+      try {
+        chats = JSON.parse(stored);
+        if (!Array.isArray(chats) || chats.length === 0) throw new Error("Invalid");
+      } catch { chats = [{ id: Date.now(), title: "New chat", messages: [] }]; }
     }
+    if (active) activeChatId = Number(active);
+    if (!getActiveChat()) activeChatId = chats[0].id;
+  }
+
+  function removeChat(id) {
+    chats = chats.filter(c => c.id !== id);
+    if (!chats.length) chats = [{ id: Date.now(), title: "New chat", messages: [] }];
+    if (!getActiveChat()) activeChatId = chats[0].id;
+    render();
+  }
+
+  function renderChatList() {
+    chatListEl.innerHTML = "";
+    chats.forEach(chat => {
+      const item = document.createElement("div");
+      item.className = "chat-item" + (chat.id === activeChatId ? " active" : "");
+
+      const title = document.createElement("span");
+      title.textContent = chat.title || "Untitled";
+      title.onclick = () => { activeChatId = chat.id; render(); };
+
+      const del = document.createElement("button");
+      del.textContent = "×";
+      del.title = "Delete chat";
+      del.onclick = (e) => { e.stopPropagation(); removeChat(chat.id); };
+
+      item.appendChild(title);
+      item.appendChild(del);
+      item.onclick = () => { activeChatId = chat.id; render(); };
+      chatListEl.appendChild(item);
+    });
+  }
+
+  function addMessageToUI(role, text) {
+    const wrapper = document.createElement("div");
+    wrapper.className = "msg " + role;
+    const label = document.createElement("div");
+    label.className = "label";
+    label.textContent = role === "user" ? "You" : "Assistant";
     const content = document.createElement("div");
     content.textContent = text;
-    div.appendChild(content);
-    messagesEl.appendChild(div);
+    wrapper.append(label, content);
+    messagesEl.appendChild(wrapper);
     messagesEl.scrollTop = messagesEl.scrollHeight;
     return content;
   }
 
+  function renderMessages() {
+    messagesEl.innerHTML = "";
+    const active = getActiveChat();
+    active.messages.forEach(m => addMessageToUI(m.role === "assistant" ? "assistant" : "user", m.content));
+  }
+
+  function render() { renderChatList(); renderMessages(); persist(); }
+
+  newChatBtn.addEventListener("click", () => {
+    const id = Date.now();
+    chats.unshift({ id, title: "New chat", messages: [] });
+    activeChatId = id;
+    render();
+    inputEl.focus();
+  });
+
   async function send() {
     const text = inputEl.value.trim();
     if (!text) return;
+    const active = getActiveChat();
+
     inputEl.value = "";
     sendBtn.disabled = true;
+    addMessageToUI("user", text);
+    active.messages.push({ role: "user", content: text });
 
-    addMessage("user", text);
-    history.push({ role: "user", content: text });
+    if (active.messages.length === 1) {
+      active.title = text.slice(0, 28) + (text.length > 28 ? "..." : "");
+      renderChatList();
+    }
 
-    const contentEl = addMessage("assistant", "");
+    const contentEl = addMessageToUI("assistant", "Thinking...");
     contentEl.className = "typing";
-    contentEl.textContent = "Thinking...";
 
     try {
       const res = await fetch("/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: history })
+        body: JSON.stringify({ messages: active.messages, model: modelEl.value })
       });
+
+      if (!res.ok || !res.body) {
+        const body = await res.text();
+        throw new Error(body || `HTTP ${res.status}`);
+      }
+
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let reply = "";
@@ -81,13 +204,17 @@
         if (done) break;
         reply += decoder.decode(value, { stream: true });
         contentEl.textContent = reply;
-        messagesEl.scrollTop = messagesEl.scrollHeight;
       }
-      history.push({ role: "assistant", content: reply });
+
+      active.messages.push({ role: "assistant", content: reply });
     } catch (e) {
-      contentEl.textContent = "Error: " + e.message;
+      const errorText = "Error: " + (e?.message || "Unknown error");
+      contentEl.textContent = errorText;
+      active.messages.push({ role: "assistant", content: errorText });
     }
+
     sendBtn.disabled = false;
+    persist();
     inputEl.focus();
   }
 
@@ -95,6 +222,9 @@
   inputEl.addEventListener("keydown", e => {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
   });
+
+  restore();
+  render();
 </script>
 </body>
 </html>
