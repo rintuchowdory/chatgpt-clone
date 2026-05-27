@@ -35,7 +35,7 @@ ALLOWED_MODELS = {
 
 @app.get("/", response_class=HTMLResponse)
 async def home():
-    with open("index.html", encoding="utf-8") as f:
+    with open("static/index.html", encoding="utf-8") as f:
         return f.read()
 
 
