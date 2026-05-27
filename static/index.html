@@ -21,8 +21,10 @@
   .btn { border: 1px solid var(--line); background: #222; color: var(--text); border-radius: 10px; padding: 10px 12px; cursor: pointer; }
   .btn:hover { background: #2a2a2a; }
   .chat-list { display: flex; flex-direction: column; gap: 8px; overflow: auto; }
-  .chat-item { border: 1px solid transparent; padding: 10px; border-radius: 8px; color: var(--text-muted); cursor: pointer; }
+  .chat-item { border: 1px solid transparent; padding: 10px; border-radius: 8px; color: var(--text-muted); cursor: pointer; display: flex; justify-content: space-between; align-items: center; }
   .chat-item.active, .chat-item:hover { border-color: var(--line); background: #171717; color: var(--text); }
+  .chat-item button { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 18px; padding: 0; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; }
+  .chat-item button:hover { color: #ff6b6b; }
   .main { display: flex; flex-direction: column; }
   .topbar { height: 60px; border-bottom: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; padding: 0 20px; background: var(--panel); }
   .title { font-size: 16px; font-weight: 600; }
@@ -34,10 +36,12 @@
   .label { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--text-muted); margin-bottom: 6px; }
   .typing { color: var(--text-muted); font-style: italic; }
   .composer-wrap { border-top: 1px solid var(--line); padding: 16px; background: var(--panel); }
-  .composer { max-width: 880px; margin: 0 auto; display: flex; gap: 10px; }
+  .composer { max-width: 880px; margin: 0 auto; display: flex; gap: 10px; flex-direction: column; }
   textarea { flex: 1; min-height: 56px; max-height: 200px; resize: vertical; border-radius: 12px; border: 1px solid #3b3b3b; background: var(--panel-2); color: var(--text); padding: 12px 14px; font-size: 15px; }
-  .send { background: var(--brand); color: #fff; border: none; border-radius: 12px; padding: 0 20px; font-weight: 600; cursor: pointer; }
+  .composer-buttons { display: flex; gap: 10px; }
+  .send { background: var(--brand); color: #fff; border: none; border-radius: 12px; padding: 0 20px; font-weight: 600; cursor: pointer; flex: 1; }
   .send:disabled { opacity: .5; cursor: not-allowed; }
+  .hint { font-size: 12px; color: var(--text-muted); text-align: center; margin-top: 8px; }
   @media (max-width: 900px) { .app { grid-template-columns: 1fr; } .sidebar { display: none; } }
 </style>
 </head>
@@ -64,7 +68,10 @@
     <div class="composer-wrap">
       <div class="composer">
         <textarea id="input" placeholder="Message ChatGPT clone..."></textarea>
-        <button class="send" id="send">Send</button>
+        <div class="composer-buttons">
+          <button class="send" id="send">Send</button>
+        </div>
+        <div class="hint">Shift+Enter for new line · Enter to send</div>
       </div>
     </div>
   </main>
@@ -105,16 +112,32 @@
     if (!getActiveChat()) activeChatId = chats[0].id;
   }
 
+  function removeChat(id) {
+    chats = chats.filter(c => c.id !== id);
+    if (!chats.length) chats = [{ id: Date.now(), title: "New chat", messages: [] }];
+    if (!getActiveChat()) activeChatId = chats[0].id;
+    render();
+  }
+
   function renderChatList() {
     chatListEl.innerHTML = "";
     chats.forEach(chat => {
       const item = document.createElement("div");
       item.className = "chat-item" + (chat.id === activeChatId ? " active" : "");
-      item.textContent = chat.title || "Untitled";
-      item.onclick = () => {
-        activeChatId = chat.id;
-        render();
-      };
+
+      const title = document.createElement("span");
+      title.textContent = chat.title || "Untitled";
+      title.onclick = () => { activeChatId = chat.id; render(); };
+      title.style.flex = "1";
+
+      const del = document.createElement("button");
+      del.textContent = "×";
+      del.title = "Delete chat";
+      del.onclick = (e) => { e.stopPropagation(); removeChat(chat.id); };
+
+      item.appendChild(title);
+      item.appendChild(del);
+      item.onclick = () => { activeChatId = chat.id; render(); };
       chatListEl.appendChild(item);
     });
   }
@@ -127,8 +150,7 @@
     label.textContent = role === "user" ? "You" : "Assistant";
     const content = document.createElement("div");
     content.textContent = text;
-    wrapper.appendChild(label);
-    wrapper.appendChild(content);
+    wrapper.append(label, content);
     messagesEl.appendChild(wrapper);
     messagesEl.scrollTop = messagesEl.scrollHeight;
     return content;
@@ -140,11 +162,7 @@
     active.messages.forEach(m => addMessageToUI(m.role === "assistant" ? "assistant" : "user", m.content));
   }
 
-  function render() {
-    renderChatList();
-    renderMessages();
-    persist();
-  }
+  function render() { renderChatList(); renderMessages(); persist(); }
 
   newChatBtn.addEventListener("click", () => {
     const id = Date.now();
@@ -158,39 +176,31 @@
     const text = inputEl.value.trim();
     if (!text) return;
     const active = getActiveChat();
-
     inputEl.value = "";
     sendBtn.disabled = true;
-
     addMessageToUI("user", text);
     active.messages.push({ role: "user", content: text });
-
     if (active.messages.length === 1) {
       active.title = text.slice(0, 28) + (text.length > 28 ? "..." : "");
       renderChatList();
     }
-
     const contentEl = addMessageToUI("assistant", "Thinking...");
     contentEl.className = "typing";
-
     try {
       const res = await fetch("/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ messages: active.messages, model: modelEl.value })
       });
-
       if (!res.ok || !res.body) {
         const body = await res.text();
         throw new Error(body || `HTTP ${res.status}`);
       }
-
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let reply = "";
       contentEl.className = "";
       contentEl.textContent = "";
-
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
@@ -198,14 +208,12 @@
         contentEl.textContent = reply;
         messagesEl.scrollTop = messagesEl.scrollHeight;
       }
-
       active.messages.push({ role: "assistant", content: reply });
     } catch (e) {
       const errorText = "Error: " + (e?.message || "Unknown error");
       contentEl.textContent = errorText;
       active.messages.push({ role: "assistant", content: errorText });
     }
-
     sendBtn.disabled = false;
     persist();
     inputEl.focus();
@@ -213,10 +221,7 @@
 
   sendBtn.addEventListener("click", send);
   inputEl.addEventListener("keydown", e => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      send();
-    }
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
   });
 
   restore();

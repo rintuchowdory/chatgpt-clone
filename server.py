@@ -1,14 +1,27 @@
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
 import httpx
 import os
 import json
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 app = FastAPI(title="ChatGPT Clone")
-app.mount("/static", StaticFiles(directory="static"), name="static")
 
-GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
+# Enable CORS for cross-origin requests
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+app.mount("/static", StaticFiles(directory="static"), name="static")
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
 DEFAULT_MODEL = "llama3-8b-8192"
 ALLOWED_MODELS = {
@@ -25,21 +38,60 @@ async def home():
         return f.read()
 
 
+@app.get("/health")
+async def health():
+    """Health check endpoint to verify API key configuration."""
+    has_key = bool(os.getenv("GROQ_API_KEY", ""))
+    return JSONResponse({
+        "ok": True,
+        "provider": "groq",
+        "api_key_configured": has_key
+    })
+
+
+def sanitize_messages(raw_messages):
+    """Validate and sanitize incoming chat messages."""
+    if not isinstance(raw_messages, list):
+        return []
+    
+    cleaned = []
+    for item in raw_messages:
+        if not isinstance(item, dict):
+            continue
+        
+        role = item.get("role")
+        content = item.get("content")
+        
+        # Validate role and content
+        if role not in {"system", "user", "assistant"}:
+            continue
+        if not isinstance(content, str):
+            continue
+        
+        content = content.strip()
+        if not content:
+            continue
+        
+        cleaned.append({"role": role, "content": content})
+    
+    # Keep only the last 40 messages to avoid token limits
+    return cleaned[-40:]
+
+
 @app.post("/chat")
 async def chat(request: Request):
+    """Stream chat responses from Groq API."""
     body = await request.json()
-    messages = body.get("messages", [])
+    messages = sanitize_messages(body.get("messages", []))
     model = body.get("model", DEFAULT_MODEL)
-
-    if not isinstance(messages, list):
-        messages = []
-
+    
     if model not in ALLOWED_MODELS:
         model = DEFAULT_MODEL
-
+    
     async def stream():
-        if not GROQ_API_KEY:
-            yield "[Server error] GROQ_API_KEY is missing. Add it to your .env or environment."
+        api_key = os.getenv("GROQ_API_KEY", "")
+        if not api_key:
+            yield "[Server error] GROQ_API_KEY is missing. Add it to your environment or .env file."
             return
 
         async with httpx.AsyncClient(timeout=60) as client:
@@ -47,22 +99,22 @@ async def chat(request: Request):
                 "POST",
                 GROQ_URL,
                 headers={
-                    "Authorization": f"Bearer {GROQ_API_KEY}",
+                    "Authorization": f"Bearer {api_key}",
                     "Content-Type": "application/json",
                 },
                 json={
                     "model": model,
                     "messages": messages,
                     "stream": True,
-                    "max_tokens": 1024,
-                    "temperature": 0.7,
+                    "max_tokens": 1200,
+                    "temperature": 0.6,
                 },
             ) as resp:
                 if resp.status_code >= 400:
                     details = await resp.aread()
                     yield f"[Provider error {resp.status_code}] {details.decode(errors='ignore')}"
                     return
-
+                
                 async for line in resp.aiter_lines():
                     if line.startswith("data: "):
                         data = line[6:]
@@ -75,5 +127,5 @@ async def chat(request: Request):
                                 yield token
                         except Exception:
                             continue
-
+    
     return StreamingResponse(stream(), media_type="text/plain")
