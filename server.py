@@ -1,6 +1,5 @@
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
-from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 import httpx
 import os
@@ -21,8 +20,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# app.mount("/static", StaticFiles(directory="static"), name="static")
-GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
+# GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
 DEFAULT_MODEL = "llama-3.1-8b-instant"
 ALLOWED_MODELS = {
     "llama-3.1-8b-instant",
@@ -35,7 +33,8 @@ ALLOWED_MODELS = {
 
 @app.get("/", response_class=HTMLResponse)
 async def home():
-    with open("static/index.html", encoding="utf-8") as f:
+    import os
+    with open(os.path.join(os.path.dirname(__file__), "static/index.html"), encoding="utf-8") as f:
         return f.read()
 
 
