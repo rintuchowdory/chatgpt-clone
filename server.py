@@ -25,12 +25,15 @@ ALLOWED_MODELS = {
 }
 
 # Max completion tokens per model (to avoid exceeding limits)
+# Conservative caps to stay under the free/on-demand tier TPM limit (8,000 tokens/min).
+# Groq counts max_tokens toward the per-minute budget even if the reply is shorter,
+# so keep these well under the limit to avoid rate_limit_exceeded errors.
 MAX_TOKENS = {
-    "openai/gpt-oss-120b": 65536,
-    "openai/gpt-oss-20b": 65536,
-    "groq/compound": 8192,
-    "groq/compound-mini": 8192,
-    "qwen/qwen3.6-27b": 16384,
+    "openai/gpt-oss-120b": 2048,
+    "openai/gpt-oss-20b": 2048,
+    "groq/compound": 2048,
+    "groq/compound-mini": 2048,
+    "qwen/qwen3.6-27b": 2048,
 }
 
 
@@ -67,6 +70,12 @@ async def chat(request: Request):
         messages = []
     if model not in ALLOWED_MODELS:
         model = DEFAULT_MODEL
+
+    # Keep only the most recent turns to stay well under the TPM budget on
+    # the free/on-demand tier. Long histories otherwise trigger rate_limit_exceeded.
+    MAX_HISTORY_MESSAGES = 12
+    if len(messages) > MAX_HISTORY_MESSAGES:
+        messages = messages[-MAX_HISTORY_MESSAGES:]
 
     if not GROQ_API_KEY:
         return StreamingResponse(
